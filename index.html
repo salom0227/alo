@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FixOne — Telefon Ta'mirlash Xizmati</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --black: #0d0d0d;
+  --gray-900: #1a1a1a;
+  --gray-700: #3d3d3d;
+  --gray-500: #6b6b6b;
+  --gray-300: #c4c4c4;
+  --gray-100: #f2f2f0;
+  --gray-50: #f8f8f6;
+  --white: #ffffff;
+  --red: #e63946;
+  --red-dark: #b52d38;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--white);
+  color: var(--black);
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 400;
+  overflow-x: hidden;
+  cursor: none;
+}
+
+/* Cursor */
+.cur { width: 8px; height: 8px; background: var(--black); border-radius: 50%; position: fixed; pointer-events: none; z-index: 9999; transition: transform 0.15s, background 0.2s; mix-blend-mode: difference; }
+.cur-ring { width: 36px; height: 36px; border: 1px solid var(--black); border-radius: 50%; position: fixed; pointer-events: none; z-index: 9998; transition: transform 0.08s; mix-blend-mode: difference; }
+
+/* NAV */
+nav {
+  position: fixed; top: 0; width: 100%; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 22px 60px;
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+}
+.logo {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.6rem;
+  color: var(--black);
+  letter-spacing: -0.5px;
+}
+.logo em { color: var(--red); font-style: normal; }
+.logo span { font-size: 0.55em; font-family: 'DM Sans', sans-serif; font-weight: 500; color: var(--gray-500); letter-spacing: 2px; text-transform: uppercase; vertical-align: middle; margin-left: 4px; }
+
+nav ul { list-style: none; display: flex; align-items: center; gap: 36px; }
+nav ul li a {
+  color: var(--gray-700); text-decoration: none;
+  font-size: 0.85rem; font-weight: 500; letter-spacing: 0.5px;
+  transition: color 0.2s;
+}
+nav ul li a:hover { color: var(--black); }
+.nav-phone {
+  background: var(--black); color: var(--white) !important;
+  padding: 10px 22px; border-radius: 2px;
+  font-size: 0.82rem !important; font-weight: 600 !important;
+  letter-spacing: 0.5px; transition: background 0.2s !important;
+}
+.nav-phone:hover { background: var(--red) !important; color: var(--white) !important; }
+
+/* HERO */
+.hero {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  padding: 120px 60px 80px;
+  gap: 60px;
+  max-width: 1300px;
+  margin: 0 auto;
+}
+.hero-left { }
+.hero-eyebrow {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 28px;
+  animation: fadeUp 0.7s ease both;
+}
+.eyebrow-line { width: 32px; height: 1px; background: var(--red); }
+.eyebrow-text { font-size: 0.72rem; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: var(--gray-500); }
+
+.hero h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: clamp(3rem, 5.5vw, 5.5rem);
+  line-height: 1.0;
+  letter-spacing: -2px;
+  color: var(--black);
+  margin-bottom: 28px;
+  animation: fadeUp 0.8s ease 0.1s both;
+}
+.hero h1 em { color: var(--red); font-style: italic; }
+.hero h1 .thin { font-family: 'DM Serif Display', serif; font-style: italic; color: var(--gray-300); }
+
+.hero-desc {
+  font-size: 1rem; line-height: 1.75; color: var(--gray-500);
+  max-width: 420px; margin-bottom: 40px;
+  font-weight: 300;
+  animation: fadeUp 0.8s ease 0.2s both;
+}
+
+.hero-actions {
+  display: flex; align-items: center; gap: 24px;
+  animation: fadeUp 0.8s ease 0.3s both;
+}
+.btn-main {
+  background: var(--black); color: var(--white);
+  padding: 15px 34px; border-radius: 2px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.85rem; font-weight: 600; letter-spacing: 1px;
+  text-decoration: none; transition: background 0.2s, transform 0.2s;
+  display: inline-block;
+}
+.btn-main:hover { background: var(--red); transform: translateY(-2px); }
+.btn-link {
+  color: var(--gray-700); text-decoration: none;
+  font-size: 0.85rem; font-weight: 500;
+  border-bottom: 1px solid var(--gray-300);
+  padding-bottom: 2px; transition: color 0.2s, border-color 0.2s;
+}
+.btn-link:hover { color: var(--red); border-color: var(--red); }
+
+/* Hero Right — Phone Visual */
+.hero-right {
+  display: flex; justify-content: center; align-items: center;
+  position: relative;
+  animation: fadeUp 1s ease 0.4s both;
+}
+.phone-wrap {
+  position: relative;
+  width: 280px; height: 520px;
+}
+.phone-body {
+  position: absolute;
+  width: 200px; height: 400px;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--black);
+  border-radius: 36px;
+  box-shadow: 0 60px 120px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.1);
+  overflow: hidden;
+  animation: float 5s ease-in-out infinite;
+}
+.phone-screen {
+  position: absolute;
+  inset: 8px;
+  background: #0d0d0d;
+  border-radius: 30px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 8px;
+}
+.phone-screen-inner {
+  background: linear-gradient(160deg, #1a1a1a, #111);
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 10px;
+  padding: 20px;
+}
+.ps-logo { font-family: 'DM Serif Display', serif; font-size: 1.4rem; color: #fff; letter-spacing: -0.5px; }
+.ps-logo em { color: var(--red); font-style: normal; }
+.ps-tag { font-size: 0.55rem; letter-spacing: 3px; text-transform: uppercase; color: rgba(255,255,255,0.3); }
+.ps-divider { width: 30px; height: 1px; background: var(--red); }
+.ps-services { display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 6px; }
+.ps-item { display: flex; align-items: center; gap: 8px; }
+.ps-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
+.ps-item-text { font-size: 0.6rem; color: rgba(255,255,255,0.5); letter-spacing: 0.5px; }
+.ps-number { font-size: 0.75rem; font-weight: 600; color: var(--red); margin-top: 12px; letter-spacing: 1px; }
+.phone-notch { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); width: 70px; height: 22px; background: #000; border-radius: 14px; z-index: 2; }
+.phone-shadow-2 {
+  position: absolute;
+  width: 170px; height: 340px;
+  left: calc(50% + 30px); top: calc(50% + 20px);
+  transform: translate(-50%, -50%);
+  background: var(--gray-100);
+  border-radius: 30px;
+  z-index: -1;
+  animation: float 5s ease-in-out 0.4s infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translate(-50%, -50%) translateY(0); }
+  50% { transform: translate(-50%, -50%) translateY(-16px); }
+}
+
+/* Floating badges */
+.badge-float {
+  position: absolute;
+  background: var(--white);
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 8px;
+  padding: 10px 16px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--black);
+  white-space: nowrap;
+}
+.badge-float .bf-icon { font-size: 1rem; display: block; margin-bottom: 2px; }
+.badge-float .bf-val { font-size: 1rem; font-weight: 700; color: var(--black); }
+.badge-float .bf-sub { font-size: 0.65rem; color: var(--gray-500); font-weight: 400; }
+.bf1 { top: 60px; left: -20px; animation: floatBadge1 4s ease-in-out infinite; }
+.bf2 { bottom: 80px; right: -10px; animation: floatBadge2 4.5s ease-in-out 0.5s infinite; }
+.bf3 { bottom: 30px; left: 0; animation: floatBadge1 5s ease-in-out 1s infinite; }
+@keyframes floatBadge1 {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes floatBadge2 {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(8px); }
+}
+
+/* DIVIDER LINE */
+.full-divider { border: none; border-top: 1px solid rgba(0,0,0,0.07); }
+
+/* MARQUEE */
+.marquee-wrap {
+  overflow: hidden; padding: 18px 0;
+  border-top: 1px solid rgba(0,0,0,0.07);
+  border-bottom: 1px solid rgba(0,0,0,0.07);
+}
+.marquee-track {
+  display: flex; gap: 50px;
+  animation: marquee 18s linear infinite;
+  width: max-content;
+}
+.marquee-track span {
+  font-size: 0.72rem; font-weight: 600; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--gray-500);
+  white-space: nowrap;
+}
+.marquee-track .dot { color: var(--red); }
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* SERVICES */
+.services {
+  padding: 100px 60px;
+  max-width: 1300px; margin: 0 auto;
+}
+.sec-header { margin-bottom: 60px; }
+.sec-label {
+  font-size: 0.72rem; font-weight: 600; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--gray-500); margin-bottom: 16px;
+  display: flex; align-items: center; gap: 12px;
+}
+.sec-label::before { content: ''; width: 24px; height: 1px; background: var(--red); display: inline-block; }
+.sec-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  letter-spacing: -1.5px; line-height: 1.05;
+  color: var(--black);
+}
+.sec-title em { font-style: italic; color: var(--gray-300); }
+
+.services-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: rgba(0,0,0,0.08);
+  border: 1px solid rgba(0,0,0,0.08);
+}
+.svc-card {
+  background: var(--white);
+  padding: 40px 36px;
+  transition: background 0.3s;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+.svc-card::after {
+  content: '';
+  position: absolute; bottom: 0; left: 0;
+  width: 0; height: 2px;
+  background: var(--red);
+  transition: width 0.4s ease;
+}
+.svc-card:hover { background: var(--gray-50); }
+.svc-card:hover::after { width: 100%; }
+
+.svc-num {
+  font-family: 'DM Serif Display', serif;
+  font-size: 3rem; color: rgba(0,0,0,0.05);
+  line-height: 1; margin-bottom: 20px;
+  letter-spacing: -2px;
+}
+.svc-icon { font-size: 1.4rem; margin-bottom: 16px; display: block; }
+.svc-title {
+  font-size: 1.05rem; font-weight: 600;
+  color: var(--black); margin-bottom: 10px; letter-spacing: -0.3px;
+}
+.svc-desc { font-size: 0.875rem; color: var(--gray-500); line-height: 1.7; font-weight: 300; }
+.svc-tag {
+  display: inline-block; margin-top: 16px;
+  font-size: 0.65rem; font-weight: 600; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--red);
+  border-bottom: 1px solid rgba(230,57,70,0.3);
+  padding-bottom: 1px;
+}
+
+/* WHY */
+.why {
+  padding: 100px 60px;
+  background: var(--black);
+}
+.why-inner { max-width: 1300px; margin: 0 auto; }
+.why .sec-label { color: rgba(255,255,255,0.3); }
+.why .sec-label::before { background: var(--red); }
+.why .sec-title { color: var(--white); }
+.why .sec-title em { color: rgba(255,255,255,0.2); }
+.why-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 40px;
+  margin-top: 60px;
+}
+.why-item { }
+.why-num {
+  font-family: 'DM Serif Display', serif;
+  font-size: 3.5rem; color: var(--red);
+  line-height: 1; margin-bottom: 12px;
+  letter-spacing: -2px;
+}
+.why-num span { font-size: 1.5rem; }
+.why-title { font-size: 0.95rem; font-weight: 600; color: var(--white); margin-bottom: 8px; }
+.why-desc { font-size: 0.85rem; color: rgba(255,255,255,0.35); line-height: 1.7; font-weight: 300; }
+.why-line { width: 100%; height: 1px; background: rgba(255,255,255,0.08); margin-bottom: 28px; }
+
+/* BRANDS */
+.brands {
+  padding: 60px;
+  max-width: 1300px; margin: 0 auto;
+  display: flex; align-items: center; gap: 60px;
+  border-top: 1px solid rgba(0,0,0,0.07);
+  border-bottom: 1px solid rgba(0,0,0,0.07);
+}
+.brands-label {
+  font-size: 0.7rem; letter-spacing: 3px; text-transform: uppercase;
+  color: var(--gray-300); font-weight: 600; white-space: nowrap;
+  flex-shrink: 0;
+}
+.brands-logos { display: flex; gap: 40px; align-items: center; flex-wrap: wrap; }
+.brand-badge {
+  font-size: 0.85rem; font-weight: 700; color: var(--gray-500);
+  letter-spacing: 1px; transition: color 0.2s;
+}
+.brand-badge:hover { color: var(--black); }
+
+/* CONTACT */
+.contact {
+  padding: 100px 60px;
+  max-width: 1300px; margin: 0 auto;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center;
+}
+.contact-left .sec-title { margin-bottom: 20px; }
+.contact-left p { font-size: 1rem; color: var(--gray-500); line-height: 1.7; font-weight: 300; max-width: 380px; margin-bottom: 32px; }
+.contact-location {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 20px 24px;
+  background: var(--gray-50);
+  border: 1px solid rgba(0,0,0,0.07);
+  border-radius: 4px;
+}
+.loc-icon { font-size: 1.2rem; margin-top: 2px; }
+.loc-title { font-size: 0.85rem; font-weight: 600; color: var(--black); margin-bottom: 2px; }
+.loc-sub { font-size: 0.8rem; color: var(--gray-500); }
+
+.contact-right { }
+.phone-big {
+  font-family: 'DM Serif Display', serif;
+  font-size: clamp(2.2rem, 4vw, 3.8rem);
+  letter-spacing: -2px; line-height: 1;
+  color: var(--black); text-decoration: none;
+  display: block; margin-bottom: 8px;
+  transition: color 0.2s;
+  border-bottom: 2px solid var(--black);
+  padding-bottom: 20px; margin-bottom: 20px;
+}
+.phone-big:hover { color: var(--red); border-color: var(--red); }
+.contact-note { font-size: 0.8rem; color: var(--gray-500); margin-bottom: 32px; }
+.social-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.social-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 20px;
+  border: 1px solid rgba(0,0,0,0.12);
+  border-radius: 2px;
+  color: var(--gray-700); text-decoration: none;
+  font-size: 0.82rem; font-weight: 500;
+  transition: all 0.2s;
+}
+.social-btn:hover { background: var(--black); color: var(--white); border-color: var(--black); }
+
+/* FOOTER */
+footer {
+  background: var(--gray-100);
+  padding: 32px 60px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-top: 1px solid rgba(0,0,0,0.07);
+}
+.footer-logo { font-family: 'DM Serif Display', serif; font-size: 1.2rem; color: var(--black); }
+.footer-logo em { color: var(--red); font-style: normal; }
+.footer-copy { font-size: 0.78rem; color: var(--gray-500); }
+
+/* Animations */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.reveal { opacity: 0; transform: translateY(30px); transition: opacity 0.7s ease, transform 0.7s ease; }
+.reveal.on { opacity: 1; transform: none; }
+
+@media (max-width: 900px) {
+  nav { padding: 16px 24px; }
+  nav ul { display: none; }
+  .hero { grid-template-columns: 1fr; padding: 100px 24px 60px; text-align: center; }
+  .hero-right { display: none; }
+  .hero-eyebrow { justify-content: center; }
+  .hero-desc { margin: 0 auto 32px; }
+  .hero-actions { justify-content: center; }
+  .services { padding: 60px 24px; }
+  .services-grid { grid-template-columns: 1fr; }
+  .why { padding: 60px 24px; }
+  .why-grid { grid-template-columns: 1fr 1fr; gap: 24px; }
+  .brands { padding: 40px 24px; flex-direction: column; gap: 24px; }
+  .contact { grid-template-columns: 1fr; padding: 60px 24px; gap: 40px; }
+  footer { padding: 24px; flex-direction: column; gap: 8px; text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<div class="cur" id="cur"></div>
+<div class="cur-ring" id="curRing"></div>
+
+<nav>
+  <div class="logo">Fix<em>One</em><span>.uz</span></div>
+  <ul>
+    <li><a href="#services">Xizmatlar</a></li>
+    <li><a href="#why">Nega Biz</a></li>
+    <li><a href="#contact">Manzil</a></li>
+    <li><a href="tel:+998881407070" class="nav-phone">+998 88 140 7070</a></li>
+  </ul>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-left">
+    <div class="hero-eyebrow">
+      <div class="eyebrow-line"></div>
+      <span class="eyebrow-text">Toshkent • Malika Bozori A5</span>
+    </div>
+    <h1>
+      Telefon<br>
+      Ta'mirlash<br>
+      <em>Xizmati</em>
+    </h1>
+    <p class="hero-desc">
+      Samsung, iPhone va barcha smartfonlar uchun kafolat bilan ekran, oyna almashtirish va kompleks ta'mirlash xizmati.
+    </p>
+    <div class="hero-actions">
+      <a href="tel:+998881407070" class="btn-main">Qo'ng'iroq Qiling</a>
+      <a href="#services" class="btn-link">Xizmatlarni Ko'rish</a>
+    </div>
+  </div>
+
+  <div class="hero-right">
+    <div class="phone-wrap">
+      <div class="phone-shadow-2"></div>
+      <div class="phone-body">
+        <div class="phone-notch"></div>
+        <div class="phone-screen">
+          <div class="phone-screen-inner">
+            <div class="ps-logo">Fix<em>One</em></div>
+            <div class="ps-tag">Telefon Service</div>
+            <div class="ps-divider"></div>
+            <div class="ps-services">
+              <div class="ps-item"><div class="ps-dot"></div><div class="ps-item-text">Ekran almashtirish</div></div>
+              <div class="ps-item"><div class="ps-dot"></div><div class="ps-item-text">Oyna almashtirish</div></div>
+              <div class="ps-item"><div class="ps-dot"></div><div class="ps-item-text">Polaroid almashtirish</div></div>
+              <div class="ps-item"><div class="ps-dot"></div><div class="ps-item-text">Samsung Fold/Flip</div></div>
+              <div class="ps-item"><div class="ps-dot"></div><div class="ps-item-text">Batareya almashtirish</div></div>
+            </div>
+            <div class="ps-number">+998 88 140 7070</div>
+          </div>
+        </div>
+      </div>
+      <div class="badge-float bf1">
+        <span class="bf-icon">🛡️</span>
+        <div class="bf-val">100%</div>
+        <div class="bf-sub">Kafolat</div>
+      </div>
+      <div class="badge-float bf2">
+        <span class="bf-icon">⚡</span>
+        <div class="bf-val">30 min</div>
+        <div class="bf-sub">Tez xizmat</div>
+      </div>
+      <div class="badge-float bf3">
+        <span class="bf-icon">✅</span>
+        <div class="bf-val">5000+</div>
+        <div class="bf-sub">Ta'mirlangan</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MARQUEE -->
+<div class="marquee-wrap">
+  <div class="marquee-track">
+    <span>Ekran Almashtirish</span><span class="dot">◆</span>
+    <span>Oyna Almashtirish</span><span class="dot">◆</span>
+    <span>Polaroid Almashtirish</span><span class="dot">◆</span>
+    <span>Samsung Fold & Flip</span><span class="dot">◆</span>
+    <span>Batareya Almashtirish</span><span class="dot">◆</span>
+    <span>Kamera Ta'mirlash</span><span class="dot">◆</span>
+    <span>Kafolat bilan Xizmat</span><span class="dot">◆</span>
+    <span>Malika Bozori A5</span><span class="dot">◆</span>
+    <span>Ekran Almashtirish</span><span class="dot">◆</span>
+    <span>Oyna Almashtirish</span><span class="dot">◆</span>
+    <span>Polaroid Almashtirish</span><span class="dot">◆</span>
+    <span>Samsung Fold & Flip</span><span class="dot">◆</span>
+    <span>Batareya Almashtirish</span><span class="dot">◆</span>
+    <span>Kamera Ta'mirlash</span><span class="dot">◆</span>
+    <span>Kafolat bilan Xizmat</span><span class="dot">◆</span>
+    <span>Malika Bozori A5</span><span class="dot">◆</span>
+  </div>
+</div>
+
+<!-- SERVICES -->
+<section class="services" id="services">
+  <div class="sec-header reveal">
+    <div class="sec-label">Bizning Xizmatlar</div>
+    <h2 class="sec-title">Barcha <em>Texnik</em><br>Muammolarga Yechim</h2>
+  </div>
+  <div class="services-grid">
+    <div class="svc-card reveal">
+      <div class="svc-num">01</div>
+      <span class="svc-icon">🔲</span>
+      <div class="svc-title">Ekran Almashtirish</div>
+      <div class="svc-desc">Yorilgan yoki ishlamay qolgan ekranlarni yuqori sifatli original qismlar bilan almashtiramiz. Har bir ish kafolat bilan.</div>
+      <span class="svc-tag">Kafolat bilan</span>
+    </div>
+    <div class="svc-card reveal">
+      <div class="svc-num">02</div>
+      <span class="svc-icon">🪟</span>
+      <div class="svc-title">Oyna Almashtirish</div>
+      <div class="svc-desc">Telefon old va orqa oynalarini Gorilla Glass sifatidagi materiallar bilan almashtirish. Tez va ishonchli xizmat.</div>
+      <span class="svc-tag">Tez xizmat</span>
+    </div>
+    <div class="svc-card reveal">
+      <div class="svc-num">03</div>
+      <span class="svc-icon">📸</span>
+      <div class="svc-title">Polaroid Almashtirish</div>
+      <div class="svc-desc">Samsung va iPhone uchun Polaroid (ko'k rangli shisha) almashtirish. Sertifikatlangan qismlar bilan professional xizmat.</div>
+      <span class="svc-tag">Samsung & iPhone</span>
+    </div>
+    <div class="svc-card reveal">
+      <div class="svc-num">04</div>
+      <span class="svc-icon">🪗</span>
+      <div class="svc-title">Samsung Fold / Flip</div>
+      <div class="svc-desc">Bukiluvchan telefonlar bo'yicha mutaxassis ustalar. Galaxy Fold va Flip seriyalarini kafolat bilan ta'mirlash.</div>
+      <span class="svc-tag">Mutaxassis</span>
+    </div>
+    <div class="svc-card reveal">
+      <div class="svc-num">05</div>
+      <span class="svc-icon">🔋</span>
+      <div class="svc-title">Batareya Almashtirish</div>
+      <div class="svc-desc">Tez quvat sarflaydigan batareyalarni original quvvat sig'imiga ega yangi batareya bilan almashtirish xizmati.</div>
+      <span class="svc-tag">Barcha modellar</span>
+    </div>
+    <div class="svc-card reveal">
+      <div class="svc-num">06</div>
+      <span class="svc-icon">🛠️</span>
+      <div class="svc-title">Kompleks Ta'mirlash</div>
+      <div class="svc-desc">Kamera, mikrofon, dinamik, tugmalar va boshqa apparat muammolarini professional uskunalar yordamida tuzatish.</div>
+      <span class="svc-tag">Har qanday nosozlik</span>
+    </div>
+  </div>
+</section>
+
+<!-- BRANDS -->
+<div class="brands">
+  <div class="brands-label">Xizmat ko'rsatamiz</div>
+  <div class="brands-logos">
+    <span class="brand-badge">Samsung</span>
+    <span class="brand-badge">Apple iPhone</span>
+    <span class="brand-badge">Galaxy Fold</span>
+    <span class="brand-badge">Galaxy Flip</span>
+    <span class="brand-badge">Xiaomi</span>
+    <span class="brand-badge">Huawei</span>
+    <span class="brand-badge">OnePlus</span>
+  </div>
+</div>
+
+<!-- WHY -->
+<section class="why" id="why">
+  <div class="why-inner">
+    <div class="sec-header reveal">
+      <div class="sec-label">Nega FixOne</div>
+      <h2 class="sec-title">Farqimiz <em>Sifatda</em></h2>
+    </div>
+    <div class="why-grid">
+      <div class="why-item reveal">
+        <div class="why-line"></div>
+        <div class="why-num">100<span>%</span></div>
+        <div class="why-title">Kafolat</div>
+        <div class="why-desc">Har bir ta'mirlashga rasmiy kafolat beramiz. Sifat bizning birinchi ustuvorligimiz.</div>
+      </div>
+      <div class="why-item reveal">
+        <div class="why-line"></div>
+        <div class="why-num">30<span>min</span></div>
+        <div class="why-title">Tezkor Xizmat</div>
+        <div class="why-desc">Ko'pchilik ta'mirlashlar 30-60 daqiqa ichida bajariladi. Vaqtingiz bizga qadrli.</div>
+      </div>
+      <div class="why-item reveal">
+        <div class="why-line"></div>
+        <div class="why-num">5K<span>+</span></div>
+        <div class="why-title">Mamnun Mijoz</div>
+        <div class="why-desc">5000 dan ortiq muvaffaqiyatli ta'mirlash. Har bir mijoz biz uchun muhim.</div>
+      </div>
+      <div class="why-item reveal">
+        <div class="why-line"></div>
+        <div class="why-num">3<span>yil</span></div>
+        <div class="why-title">Tajriba</div>
+        <div class="why-desc">3 yildan ortiq tajribaga ega sertifikatlangan mutaxassislar jamoasi.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CONTACT -->
+<section class="contact" id="contact">
+  <div class="contact-left reveal">
+    <div class="sec-label" style="display:flex;align-items:center;gap:12px;font-size:0.72rem;font-weight:600;letter-spacing:3px;text-transform:uppercase;color:var(--gray-500);margin-bottom:16px;">
+      <span style="width:24px;height:1px;background:var(--red);display:inline-block;"></span>
+      Bog'lanish
+    </div>
+    <h2 class="sec-title" style="font-family:'DM Serif Display',serif;font-size:clamp(2rem,3.5vw,3rem);letter-spacing:-1.5px;line-height:1.05;color:var(--black);margin-bottom:20px;">
+      Bugun<br><em style="font-style:italic;color:var(--gray-300);">Murojaat</em><br>Qiling
+    </h2>
+    <p>Telefon ta'mirlash bo'yicha savol va murojaatlaringiz uchun qo'ng'iroq qiling yoki bizni Malika Bozori A5 do'konida toping.</p>
+    <div class="contact-location">
+      <span class="loc-icon">📍</span>
+      <div>
+        <div class="loc-title">Malika Bozori — A5 Do'koni</div>
+        <div class="loc-sub">Toshkent, O'zbekiston</div>
+      </div>
+    </div>
+  </div>
+  <div class="contact-right reveal">
+    <a href="tel:+998881407070" class="phone-big">+998 88 140 7070</a>
+    <div class="contact-note">Batafsil ma'lumot va bron qilish uchun</div>
+    <div class="social-row">
+      <a href="https://fixone.uz" target="_blank" class="social-btn">🌐 fixone.uz</a>
+      <a href="https://instagram.com/fixone.uz" target="_blank" class="social-btn">📸 Instagram</a>
+      <a href="https://t.me/fixone.uz" target="_blank" class="social-btn">✈️ Telegram</a>
+    </div>
+  </div>
+</section>
+
+<hr class="full-divider">
+
+<footer>
+  <div class="footer-logo">Fix<em>One</em>.uz</div>
+  <div class="footer-copy">© 2025 FixOne.uz — Telefon Service, Malika Bozori A5, Toshkent</div>
+</footer>
+
+<script>
+// Cursor
+const cur = document.getElementById('cur');
+const ring = document.getElementById('curRing');
+let rx = 0, ry = 0, mx = 0, my = 0;
+document.addEventListener('mousemove', e => {
+  mx = e.clientX; my = e.clientY;
+  cur.style.left = mx - 4 + 'px';
+  cur.style.top = my - 4 + 'px';
+});
+(function anim() {
+  rx += (mx - rx) * 0.1;
+  ry += (my - ry) * 0.1;
+  ring.style.left = rx - 18 + 'px';
+  ring.style.top = ry - 18 + 'px';
+  requestAnimationFrame(anim);
+})();
+document.querySelectorAll('a, button, .svc-card, .why-item, .brand-badge').forEach(el => {
+  el.addEventListener('mouseenter', () => { cur.style.transform = 'scale(3)'; ring.style.transform = 'scale(1.5)'; });
+  el.addEventListener('mouseleave', () => { cur.style.transform = ''; ring.style.transform = ''; });
+});
+
+// Scroll reveal
+const obs = new IntersectionObserver(entries => {
+  entries.forEach((e, i) => {
+    if (e.isIntersecting) {
+      const siblings = [...e.target.parentElement.querySelectorAll('.reveal')];
+      const idx = siblings.indexOf(e.target);
+      setTimeout(() => e.target.classList.add('on'), idx * 90);
+    }
+  });
+}, { threshold: 0.1 });
+document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
+</script>
+</body>
+</html>
