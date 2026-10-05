@@ -518,6 +518,7 @@ def panel_kb(started: bool):
     if started:
         rows.append([("🔀 Tartibni o'zgartirish", "adm:order")])
         rows.append([("🔁 Navbatchini o'tkazish", "adm:skip")])
+        rows.append([("👤 Bugungi navbatchini almashtirish", "adm:assign")])
     else:
         rows.append([("🚀 Navbatchilikni boshlash", "adm:order")])
     rows.append([("👥 A'zolar", "menu:members"), ("🔄 Yangilash", "adm:panel")])
@@ -842,6 +843,102 @@ async def cb_skip_ok(cb: CallbackQuery):
     text, _ = await do_skip(cb.bot)
     await cb.answer()
     await show(cb, text, kb([("👑 Admin paneli", "adm:panel")]))
+
+
+# ---- bugungi navbatchini bekor qilib, boshqa odamni tayinlash
+@router.callback_query(F.data == "adm:assign")
+async def cb_assign(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        return await cb.answer("Faqat super admin uchun.", show_alert=True)
+    if not await is_started():
+        return await cb.answer("Navbatchilik hali boshlanmagan.", show_alert=True)
+    row = await get_or_create_shift(shift_day(datetime.now(TZ)))
+    if not row:
+        return await cb.answer("Ro'yxat bo'sh.", show_alert=True)
+    members = await active_members()
+    rows, line = [], []
+    for m in members:
+        label = m["full_name"] if len(m["full_name"]) <= 18 else m["full_name"][:17] + "…"
+        mark = "👉 " if m["user_id"] == row["user_id"] else ""
+        line.append((f"{mark}{label}", f"as:{m['user_id']}"))
+        if len(line) == 2:
+            rows.append(line)
+            line = []
+    if line:
+        rows.append(line)
+    rows.append([("⬅️ Orqaga", "adm:panel")])
+    await cb.answer()
+    await show(
+        cb,
+        f"👤 <b>Navbatchini almashtirish</b>\n{LINE}\n"
+        f"Hozirgi: <b>{who(row)}</b> — {STATUS_TEXT[row['status']]}\n\n"
+        "Bugun uchun yangi navbatchini tanlang. Joriy navbatchilik (rasmlar, tasdiq) bekor qilinadi:",
+        kb(*rows),
+    )
+
+
+@router.callback_query(F.data.startswith("as:"))
+async def cb_assign_pick(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        return await cb.answer("Faqat super admin uchun.", show_alert=True)
+    uid = int(cb.data.split(":", 1)[1])
+    m = await pool.fetchrow("SELECT * FROM members WHERE user_id=$1", uid)
+    if not m:
+        return await cb.answer("A'zo topilmadi.", show_alert=True)
+    await cb.answer()
+    await show(
+        cb,
+        f"❓ Bugungi navbatchilik <b>{who(m)}</b> ga tayinlansinmi?\n\n"
+        "Hozirgi navbatchining natijasi bekor qilinadi, yangi odamga xabar boradi.",
+        kb([("✅ Ha, tayinlash", f"asok:{uid}"), ("⬅️ Yo'q", "adm:assign")]),
+    )
+
+
+@router.callback_query(F.data.startswith("asok:"))
+async def cb_assign_ok(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        return await cb.answer("Faqat super admin uchun.", show_alert=True)
+    uid = int(cb.data.split(":", 1)[1])
+    new = await pool.fetchrow("SELECT * FROM members WHERE user_id=$1 AND active AND NOT excluded", uid)
+    if not new:
+        return await cb.answer("Bu a'zo navbatda emas.", show_alert=True)
+    day = shift_day(datetime.now(TZ))
+    old = await get_or_create_shift(day)
+    if not old:
+        return await cb.answer("Ro'yxat bo'sh.", show_alert=True)
+    if old["user_id"] == uid and old["status"] in ("open", "collecting"):
+        return await cb.answer("U allaqachon bugungi navbatchi.", show_alert=True)
+
+    await pool.execute(
+        "UPDATE shifts SET user_id=$2, username=$3, full_name=$4, seq=$5, status='open', admin_comment=NULL "
+        "WHERE day=$1",
+        day, new["user_id"], new["username"], new["full_name"], new["pos"],
+    )
+    await pool.execute("DELETE FROM shift_photos WHERE day=$1", day)
+    # shu smena uchun kutilayotgan izoh so'rovi bo'lsa, bekor qilamiz
+    pend = await get_setting("admin_pending")
+    if pend and pend.split("|")[1] == day.isoformat():
+        await set_setting("admin_pending", "")
+
+    await cb.answer("Almashtirildi ✅")
+    await show(
+        cb,
+        f"✅ <b>Navbatchi almashtirildi</b>\n{LINE}\nEndi bugungi navbatchi: <b>{who(new)}</b>",
+        kb([("👑 Admin paneli", "adm:panel")]),
+    )
+    if old["user_id"] != uid:
+        await safe_send(cb.bot, old["user_id"],
+                        f"ℹ️ {who(old)}, bugungi navbatchilik sizdan olindi va boshqa odamga tayinlandi.")
+    await safe_send(
+        cb.bot, new["user_id"],
+        f"📌 {who(new)}, bugungi navbatchilik <b>sizga tayinlandi</b>.\n"
+        "Bajarib bo'lgach «Bajardim» tugmasini bosing.",
+        reply_markup=bajardim_kb(day),
+    )
+    chat = await get_chat_id()
+    if chat:
+        await safe_send(cb.bot, chat,
+                        f"🔄 Bugungi navbatchi almashtirildi.\n📅 Yangi navbatchi: <b>{who_group(new)}</b>")
 
 
 # ------------------------------------------- navbatchi: bajardim -> rasmlar -> yuborish
