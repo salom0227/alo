@@ -36,13 +36,17 @@ TZ = ZoneInfo(os.getenv("TZ_NAME", "Asia/Tashkent"))
 SELF_URL = os.getenv("RENDER_EXTERNAL_URL")
 
 # Kechki smena 19:00 da boshlanadi va ertasi kuni 02:30 gacha davom etadi.
-REM_SLOTS = {(h, m) for h in (19, 20, 21, 22, 23, 0, 1) for m in (0, 30)} | {(2, 0), (2, 30)}
-GROUP_SLOTS = {(19, 0), (21, 0), (23, 0), (1, 0), (2, 30)}
 FINAL_SLOT = (2, 31)
 EVE_START = (19, 0)
+EVE_START_MIN = 19 * 60  # 19:00 ning daqiqadagi qiymati
+EVE_LENGTH_MIN = 450  # 19:00 dan 02:30 gacha (7.5 soat)
 DEFAULT_DAY_TIMES = "09:00,13:00,17:00"
+DEFAULT_PERSONAL_MIN = 30  # navbatchining shaxsiy chatiga: har 30 daqiqada
+DEFAULT_GROUP_MIN = 60  # guruhga: har 1 soatda
+PERSONAL_OPTIONS = (15, 30, 60)
+GROUP_OPTIONS = (30, 60, 120)
 MAX_PHOTOS = 10
-CARRY_OVER_MISSED = True  # bajarilmagan (missed) navbatchilik ertasi kuni o'sha odamda qoladi
+CARRY_OVER_MISSED = True  # bajarilmagan navbatchilik ertasi kuni o'sha odamda qoladi
 GROUP_TYPES = ("group", "supergroup")
 
 pool: asyncpg.Pool
@@ -106,6 +110,14 @@ def shift_day(now: datetime) -> date:
     if (now.hour, now.minute) <= FINAL_SLOT:
         return now.date() - timedelta(days=1)
     return now.date()
+
+
+def eve_offset(hm: tuple[int, int]) -> int:
+    """19:00 dan boshlab o'tgan daqiqalar (kechki oynadan tashqarida bo'lsa ham hisoblanadi)."""
+    minutes = hm[0] * 60 + hm[1]
+    if hm <= FINAL_SLOT:
+        minutes += 24 * 60
+    return minutes - EVE_START_MIN
 
 
 def who(r) -> str:
@@ -217,6 +229,48 @@ async def get_day_times() -> list[tuple[int, int]]:
         if m and valid_day_time(int(m[1]), int(m[2])):
             out.append((int(m[1]), int(m[2])))
     return sorted(set(out))
+
+
+async def get_interval(key: str, default: int) -> int:
+    raw = await get_setting(key, str(default))
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return v if v > 0 else default
+
+
+def parse_times(text: str):
+    """(vaqtlar ro'yxati, xato matni) qaytaradi."""
+    parts = [p for p in re.split(r"[\s,;]+", text.strip()) if p]
+    if not parts:
+        return None, "Vaqt yozilmadi."
+    out = []
+    for p in parts:
+        m = re.fullmatch(r"(\d{1,2}):(\d{2})", p)
+        if not m or int(m[1]) > 23 or int(m[2]) > 59:
+            return None, f"«{html.escape(p)}» noto'g'ri. Format: 09:00"
+        h, mi = int(m[1]), int(m[2])
+        if not valid_day_time(h, mi):
+            return None, (
+                f"«{html.escape(p)}» mumkin emas. Kunduzgi vaqt 02:32 dan 18:59 gacha bo'lishi kerak "
+                "(kechki eslatmalar 19:00 dan boshlanadi)."
+            )
+        out.append((h, mi))
+    out = sorted(set(out))
+    if len(out) > 8:
+        return None, "Ko'pi bilan 8 ta vaqt kiritish mumkin."
+    return out, None
+
+
+def fmt_times(times) -> str:
+    return ", ".join(f"{h:02d}:{m:02d}" for h, m in times)
+
+
+def fmt_interval(minutes: int) -> str:
+    if minutes % 60 == 0:
+        return f"{minutes // 60} soat"
+    return f"{minutes} daqiqa"
 
 
 # ------------------------------------------------------------------ members
@@ -341,6 +395,24 @@ async def menu_for(uid: int):
     return admin_menu_kb() if await is_admin(uid) else user_menu_kb()
 
 
+def panel_btn():
+    return kb([("👑 Admin paneli", "adm:panel")])
+
+
+async def back_kb(uid: int):
+    """Menyuga qaytish (admin uchun admin paneliga ham)."""
+    rows = [[("⬅️ Menyu", "menu:home")]]
+    if await is_admin(uid):
+        rows.append([("👑 Admin paneli", "adm:panel")])
+    return kb(*rows)
+
+
+@router.callback_query(F.data == "menu:home")
+async def menu_home(cb: CallbackQuery):
+    await cb.answer()
+    await show(cb, "🏠 <b>Asosiy menyu</b>\nPastdagi tugmalardan foydalaning 👇", await menu_for(cb.from_user.id))
+
+
 @router.message(Command("start", "yordam"), PRIVATE)
 async def cmd_start(message: Message):
     u = message.from_user
@@ -376,13 +448,17 @@ async def notify_admin_new(bot: Bot, row):
 
 @router.message(Command("ism"), PRIVATE)
 async def cmd_name(message: Message):
-    await set_setting(f"await:{message.from_user.id}", "1")
+    uid = message.from_user.id
+    await set_setting(f"await_times:{uid}", "")
+    await set_setting(f"await:{uid}", "1")
     await message.answer("✏️ Yangi ism-familiyangizni yozib yuboring.")
 
 
 @router.callback_query(F.data == "menu:name")
 async def menu_name(cb: CallbackQuery):
-    await set_setting(f"await:{cb.from_user.id}", "1")
+    uid = cb.from_user.id
+    await set_setting(f"await_times:{uid}", "")
+    await set_setting(f"await:{uid}", "1")
     await cb.answer()
     await cb.message.answer("✏️ Yangi ism-familiyangizni yozib yuboring.")
 
@@ -401,6 +477,27 @@ async def cmd_admin(message: Message, command: CommandObject):
 async def on_text(message: Message):
     u = message.from_user
     uid = u.id
+
+    if await is_admin(uid):
+        # 1) Admin kunduzgi vaqtlarni yozmoqda
+        if await get_setting(f"await_times:{uid}"):
+            times, err = parse_times(message.text)
+            if err:
+                return await message.answer(f"⚠️ {err}\nQaytadan yozing, masalan: <code>09:00 13:00 17:00</code>")
+            await set_setting(f"await_times:{uid}", "")
+            await set_setting("day_times", ",".join(f"{h:02d}:{m:02d}" for h, m in times))
+            text, markup = await times_view()
+            return await message.answer("✅ Saqlandi.\n\n" + text, reply_markup=markup)
+
+        # 2) Admin hisobotga izoh yozmoqda
+        pend = await get_setting("admin_pending")
+        if pend:
+            decision, d = pend.split("|")
+            r = await pool.fetchrow("SELECT status FROM shifts WHERE day=$1", date.fromisoformat(d))
+            if r and r["status"] == "review":
+                return await finalize_review(message.bot, decision, d, message.text.strip()[:500])
+            await set_setting("admin_pending", "")  # eskirgan, tozalaymiz
+
     member = await pool.fetchrow("SELECT user_id FROM members WHERE user_id=$1", uid)
 
     if await get_setting(f"await:{uid}") or (not member and not u.username):
@@ -414,9 +511,6 @@ async def on_text(message: Message):
         if not member:
             await notify_admin_new(message.bot, row)
         return
-
-    if await is_admin(uid) and await get_setting("admin_pending"):
-        return await finalize_review(message.bot, message.text.strip())
 
     if not member:
         await message.answer("Ro'yxatdan o'tish uchun /start bosing.")
@@ -464,13 +558,13 @@ async def cmd_members(message: Message):
 @router.callback_query(F.data == "menu:today")
 async def menu_today(cb: CallbackQuery):
     await cb.answer()
-    await cb.message.answer(await today_text())
+    await cb.message.answer(await today_text(), reply_markup=await back_kb(cb.from_user.id))
 
 
 @router.callback_query(F.data == "menu:members")
 async def menu_members(cb: CallbackQuery):
     await cb.answer()
-    await cb.message.answer(await members_text())
+    await cb.message.answer(await members_text(), reply_markup=await back_kb(cb.from_user.id))
 
 
 @router.callback_query(F.data == "menu:bajardim")
@@ -496,12 +590,17 @@ async def admin_only(message: Message) -> bool:
 async def panel_text() -> str:
     started = await is_started()
     n = await pool.fetchval("SELECT COUNT(*) FROM members WHERE active AND NOT excluded")
-    times = ", ".join(f"{h:02d}:{m:02d}" for h, m in await get_day_times()) or "yo'q"
+    times = fmt_times(await get_day_times()) or "yo'q"
+    pers = await get_interval("eve_personal", DEFAULT_PERSONAL_MIN)
+    grp = await get_interval("eve_group", DEFAULT_GROUP_MIN)
     chat = "ulangan ✅" if await get_chat_id() else "ulanmagan ⚠️ (guruhda /ulash)"
     if started:
         sd = await get_setting("start_day")
+        sd_text = ""
+        if sd:
+            sd_text = " (" + date.fromisoformat(sd).strftime("%d.%m.%Y") + ")"
         cur = await get_or_create_shift(shift_day(datetime.now(TZ)))
-        st = f"🟢 Boshlangan{f' ({date.fromisoformat(sd).strftime(chr(37)+chr(100)+chr(46)+chr(37)+chr(109)+chr(46)+chr(37)+chr(89))})' if sd else ''}"
+        st = "🟢 Boshlangan" + sd_text
         now_line = f"\n📅 Bugun: <b>{who(cur)}</b> — {STATUS_TEXT[cur['status']]}" if cur else ""
     else:
         st = "🔴 Hali boshlanmagan"
@@ -509,7 +608,9 @@ async def panel_text() -> str:
     return (
         f"👑 <b>Admin paneli</b>\n{LINE}\n"
         f"Holat: {st}\n👥 Faol a'zolar: <b>{n}</b>{now_line}\n"
-        f"⏰ Kunduzgi vaqtlar: {times}\n💬 Guruh: {chat}"
+        f"⏰ Kunduzgi vaqtlar: {times}\n"
+        f"🌙 Kechki eslatma: profilga har {fmt_interval(pers)}, guruhga har {fmt_interval(grp)}\n"
+        f"💬 Guruh: {chat}"
     )
 
 
@@ -521,7 +622,9 @@ def panel_kb(started: bool):
         rows.append([("👤 Bugungi navbatchini almashtirish", "adm:assign")])
     else:
         rows.append([("🚀 Navbatchilikni boshlash", "adm:order")])
+    rows.append([("⏰ Vaqtlarni o'zgartirish", "tm:menu")])
     rows.append([("👥 A'zolar", "menu:members"), ("🔄 Yangilash", "adm:panel")])
+    rows.append([("🏠 Asosiy menyu", "menu:home")])
     return kb(*rows)
 
 
@@ -536,8 +639,92 @@ async def cmd_panel(message: Message):
 async def cb_panel(cb: CallbackQuery):
     if not await is_admin(cb.from_user.id):
         return await cb.answer("Faqat super admin uchun.", show_alert=True)
+    uid = cb.from_user.id
+    await set_setting(f"await_times:{uid}", "")
     await cb.answer()
     await show(cb, await panel_text(), panel_kb(await is_started()))
+
+
+# ---- vaqtlarni o'zgartirish
+async def times_view():
+    day = fmt_times(await get_day_times()) or "yo'q"
+    pers = await get_interval("eve_personal", DEFAULT_PERSONAL_MIN)
+    grp = await get_interval("eve_group", DEFAULT_GROUP_MIN)
+    text = (
+        f"⏰ <b>Eslatma vaqtlari</b>\n{LINE}\n"
+        f"☀️ Kunduzgi vaqtlar: <b>{day}</b>\n"
+        f"🌙 Kechki oyna: <b>19:00 – 02:30</b>\n"
+        f"👤 Navbatchining profiliga: har <b>{fmt_interval(pers)}</b>\n"
+        f"👥 Guruhga: har <b>{fmt_interval(grp)}</b>\n\n"
+        "Pastdan o'zgartiring 👇"
+    )
+    prow = [(("✅ " if v == pers else "") + fmt_interval(v), f"tm:p:{v}") for v in PERSONAL_OPTIONS]
+    grow = [(("✅ " if v == grp else "") + fmt_interval(v), f"tm:g:{v}") for v in GROUP_OPTIONS]
+    markup = kb(
+        [("☀️ Kunduzgi vaqtlarni o'zgartirish", "tm:day")],
+        [("👤 Profil oralig'i:", "tm:noop")],
+        prow,
+        [("👥 Guruh oralig'i:", "tm:noop")],
+        grow,
+        [("⬅️ Admin paneli", "adm:panel")],
+    )
+    return text, markup
+
+
+@router.callback_query(F.data.startswith("tm:"))
+async def cb_times(cb: CallbackQuery):
+    if not await is_admin(cb.from_user.id):
+        return await cb.answer("Faqat super admin uchun.", show_alert=True)
+    uid = cb.from_user.id
+    parts = cb.data.split(":")
+    action = parts[1]
+
+    if action == "noop":
+        return await cb.answer()
+
+    if action == "menu":
+        await set_setting(f"await_times:{uid}", "")
+        await cb.answer()
+        text, markup = await times_view()
+        return await show(cb, text, markup)
+
+    if action == "day":
+        # boshqa kutilayotgan kiritishlarni bekor qilamiz
+        await set_setting(f"await:{uid}", "")
+        await set_setting("admin_pending", "")
+        await set_setting(f"await_times:{uid}", "1")
+        cur = fmt_times(await get_day_times()) or "yo'q"
+        await cb.answer()
+        return await show(
+            cb,
+            f"☀️ <b>Kunduzgi vaqtlar</b>\n{LINE}\nHozirgi: <b>{cur}</b>\n\n"
+            "Yangi vaqtlarni probel bilan ajratib yozing.\n"
+            "Masalan: <code>09:00 13:00 17:00</code>\n\n"
+            "ℹ️ Vaqt 02:32 dan 18:59 gacha bo'lishi kerak (ko'pi bilan 8 ta).",
+            kb([("♻️ Standart (09:00 13:00 17:00)", "tm:dayreset")], [("⬅️ Bekor qilish", "tm:menu")]),
+        )
+
+    if action == "dayreset":
+        await set_setting(f"await_times:{uid}", "")
+        await set_setting("day_times", DEFAULT_DAY_TIMES)
+        await cb.answer("Standart vaqtlar qaytarildi")
+        text, markup = await times_view()
+        return await show(cb, text, markup)
+
+    if action in ("p", "g") and len(parts) == 3:
+        try:
+            value = int(parts[2])
+        except ValueError:
+            return await cb.answer()
+        allowed = PERSONAL_OPTIONS if action == "p" else GROUP_OPTIONS
+        if value not in allowed:
+            return await cb.answer()
+        await set_setting("eve_personal" if action == "p" else "eve_group", str(value))
+        await cb.answer("Saqlandi ✅")
+        text, markup = await times_view()
+        return await show(cb, text, markup)
+
+    await cb.answer()
 
 
 # ---- tartib tuzish: tasodifiy yoki qo'lda
@@ -569,7 +756,7 @@ async def draft_view():
         markup = kb(
             [(ok_label, "st:ok")],
             [("🎲 Qayta aralashtirish", "st:rand"), ("✋ Qo'lda tanlash", "st:man")],
-            [("❌ Bekor qilish", "st:cancel")],
+            [("⬅️ Orqaga", "adm:order"), ("❌ Bekor qilish", "st:cancel")],
         )
         return text, markup
 
@@ -600,7 +787,8 @@ async def draft_view():
         rows.append(ctrl)
     if not rest and ids:
         rows.append([(ok_label, "st:ok")])
-    rows.append([("🎲 Hammasini tasodifiy", "st:rand"), ("❌ Bekor", "st:cancel")])
+    rows.append([("🎲 Hammasini tasodifiy", "st:rand")])
+    rows.append([("⬅️ Orqaga", "adm:order"), ("❌ Bekor", "st:cancel")])
     return text, kb(*rows)
 
 
@@ -747,23 +935,16 @@ async def cmd_times(message: Message, command: CommandObject):
     if not await admin_only(message):
         return
     if not command.args:
-        cur = ", ".join(f"{h:02d}:{m:02d}" for h, m in await get_day_times()) or "yo'q"
-        return await message.reply(f"Kunduzgi eslatma vaqtlari: {cur}\nO'zgartirish: /vaqtlar 09:00 13:00 17:00")
-    parts = re.split(r"[\s,]+", command.args.strip())
-    ok = []
-    for p in parts:
-        m = re.fullmatch(r"([01]?\d|2[0-3]):([0-5]\d)", p)
-        if not m:
-            return await message.reply(f"«{html.escape(p)}» noto'g'ri. Format: 09:00")
-        h, mi = int(m[1]), int(m[2])
-        if not valid_day_time(h, mi):
-            return await message.reply(
-                f"«{html.escape(p)}» mumkin emas. Kunduzgi vaqt 02:32 dan 18:59 gacha bo'lishi kerak "
-                f"(kechki eslatmalar 19:00 dan boshlanadi)."
-            )
-        ok.append(f"{h:02d}:{mi:02d}")
-    await set_setting("day_times", ",".join(ok))
-    await message.reply("✅ Saqlandi: " + ", ".join(ok))
+        cur = fmt_times(await get_day_times()) or "yo'q"
+        return await message.reply(
+            f"Kunduzgi eslatma vaqtlari: {cur}\nO'zgartirish: /vaqtlar 09:00 13:00 17:00\n"
+            "Yoki /panel orqali «⏰ Vaqtlarni o'zgartirish» tugmasini bosing."
+        )
+    times, err = parse_times(command.args)
+    if err:
+        return await message.reply(err)
+    await set_setting("day_times", ",".join(f"{h:02d}:{m:02d}" for h, m in times))
+    await message.reply("✅ Saqlandi: " + fmt_times(times))
 
 
 async def _set_excluded(message: Message, command: CommandObject, value: bool):
@@ -795,6 +976,13 @@ async def cmd_include(message: Message, command: CommandObject):
     await _set_excluded(message, command, False)
 
 
+async def clear_pending_for(day: date):
+    """Shu smena uchun kutilayotgan izoh so'rovi bo'lsa, tozalaydi."""
+    pend = await get_setting("admin_pending")
+    if pend and pend.split("|")[1] == day.isoformat():
+        await set_setting("admin_pending", "")
+
+
 async def do_skip(bot: Bot):
     """Navbatchini keyingisiga o'tkazadi. (matn, ok) qaytaradi."""
     if not await is_started():
@@ -814,6 +1002,7 @@ async def do_skip(bot: Bot):
         day, nxt["user_id"], nxt["username"], nxt["full_name"], nxt["pos"],
     )
     await pool.execute("DELETE FROM shift_photos WHERE day=$1", day)
+    await clear_pending_for(day)
     await safe_send(bot, nxt["user_id"], f"📌 {who(nxt)}, navbatchilik sizga o'tkazildi.",
                     reply_markup=bajardim_kb(day))
     return f"🔁 Navbat o'tkazildi. Yangi navbatchi: <b>{who(nxt)}</b>", True
@@ -824,7 +1013,7 @@ async def cmd_skip(message: Message):
     if not await admin_only(message):
         return
     text, _ = await do_skip(message.bot)
-    await message.reply(text)
+    await message.reply(text, reply_markup=panel_btn())
 
 
 @router.callback_query(F.data == "adm:skip")
@@ -915,10 +1104,7 @@ async def cb_assign_ok(cb: CallbackQuery):
         day, new["user_id"], new["username"], new["full_name"], new["pos"],
     )
     await pool.execute("DELETE FROM shift_photos WHERE day=$1", day)
-    # shu smena uchun kutilayotgan izoh so'rovi bo'lsa, bekor qilamiz
-    pend = await get_setting("admin_pending")
-    if pend and pend.split("|")[1] == day.isoformat():
-        await set_setting("admin_pending", "")
+    await clear_pending_for(day)
 
     await cb.answer("Almashtirildi ✅")
     await show(
@@ -1059,8 +1245,11 @@ async def on_send(cb: CallbackQuery):
                     for i, f in enumerate(files)
                 ],
             )
-        await cb.bot.send_message(admin, f"{who(row)} navbatchilikni bajardi.\n<b>Rasmlarga qarab hukm qiling: bajarildimi?</b>",
-                                  reply_markup=review_kb(day))
+        await cb.bot.send_message(
+            admin,
+            f"{who(row)} navbatchilikni bajardi.\n<b>Rasmlarga qarab hukm qiling: bajarildimi?</b>",
+            reply_markup=review_kb(day),
+        )
     except Exception:
         log.exception("adminga yuborib bo'lmadi")
         await pool.execute("UPDATE shifts SET status='collecting' WHERE day=$1", day)
@@ -1083,32 +1272,32 @@ async def on_review(cb: CallbackQuery):
     row = await pool.fetchrow("SELECT * FROM shifts WHERE day=$1", date.fromisoformat(d))
     if not row or row["status"] != "review":
         return await cb.answer("Bu hisobot allaqachon ko'rib chiqilgan.", show_alert=True)
-    pend = await get_setting("admin_pending")
-    if pend and pend.split("|")[1] != d:
-        return await cb.answer(
-            "Avval oldingi hisobot uchun izoh yozing yoki «Izohsiz» tugmasini bosing.", show_alert=True
-        )
+
+    uid = cb.from_user.id
+    # boshqa kutilayotgan kiritishlarni bekor qilamiz, oxirgi bosilgan hisobotga izoh yoziladi
+    await set_setting(f"await:{uid}", "")
+    await set_setting(f"await_times:{uid}", "")
     await set_setting("admin_pending", f"{decision}|{d}")
-    try:
-        await cb.message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
     title = "✅ Bajarildi" if decision == "ok" else "❌ Bajarilmadi"
-    await cb.message.answer(f"{title}. Izohni yozib yuboring yoki «Izohsiz» tugmasini bosing:",
-                            reply_markup=kb([("Izohsiz", "rvskip")]))
     await cb.answer()
+    await cb.message.answer(
+        f"{title} — <b>{who(row)}</b> ({row['day'].strftime('%d.%m.%Y')})\n\n"
+        "✍️ Navbatchiga izoh yozib yuboring yoki izohsiz yuboring:",
+        reply_markup=kb([("➡️ Izohsiz yuborish", f"rvskip:{decision}:{d}")]),
+    )
 
 
-@router.callback_query(F.data == "rvskip")
+@router.callback_query(F.data.startswith("rvskip:"))
 async def on_review_skip(cb: CallbackQuery):
     if not await is_admin(cb.from_user.id):
-        return await cb.answer()
+        return await cb.answer("Faqat super admin uchun.", show_alert=True)
+    _, decision, d = cb.data.split(":")
     try:
         await cb.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
     await cb.answer()
-    await finalize_review(cb.bot, None)
+    await finalize_review(cb.bot, decision, d, None)
 
 
 async def announce_next(bot: Bot, row):
@@ -1125,43 +1314,58 @@ async def announce_next(bot: Bot, row):
     return f"\n➡️ Keyingi navbatchi: <b>{who(nxt)}</b> ({when})"
 
 
-async def finalize_review(bot: Bot, comment: str | None):
-    pend = await get_setting("admin_pending")
-    if not pend:
-        return
-    decision, d = pend.split("|")
+async def finalize_review(bot: Bot, decision: str, d: str, comment: str | None):
     day = date.fromisoformat(d)
     row = await pool.fetchrow("SELECT * FROM shifts WHERE day=$1", day)
-    await set_setting("admin_pending", "")
     admin = await get_admin_id()
-    if not row:
+
+    # pending ni tozalaymiz (agar aynan shu hisobotniki bo'lsa)
+    pend = await get_setting("admin_pending")
+    if pend and pend.split("|")[1] == d:
+        await set_setting("admin_pending", "")
+
+    if not row or row["status"] != "review":
+        if admin:
+            await safe_send(bot, admin, "Bu hisobot allaqachon ko'rib chiqilgan.", reply_markup=panel_btn())
         return
-    note = f"\n💬 Izoh: {html.escape(comment)}" if comment else ""
+
+    note = f"\n\n💬 <b>Admin izohi:</b> {html.escape(comment)}" if comment else ""
+    warn_text = "\n⚠️ Navbatchiga xabar yetmadi (u botni bloklagan yoki /start bosmagan)."
 
     if decision == "ok":
         await pool.execute("UPDATE shifts SET status='approved', admin_comment=$2 WHERE day=$1", day, comment)
-        await safe_send(bot, row["user_id"], f"✅ {who(row)}, navbatchiligingiz <b>bajarildi</b> deb tasdiqlandi. Rahmat!{note}")
+        sent = await safe_send(
+            bot, row["user_id"],
+            f"✅ {who(row)}, navbatchiligingiz <b>bajarildi</b> deb tasdiqlandi. Rahmat!{note}",
+        )
         chat = await get_chat_id()
         if chat:
             await safe_send(bot, chat, f"✅ {who_group(row)} navbatchilikni bajardi. Admin tasdiqladi. Rahmat!")
         nxt_line = await announce_next(bot, row)
         if admin:
-            await safe_send(bot, admin, f"✅ Bajarildi deb tasdiqlandi.{nxt_line}")
+            warn = "" if sent else warn_text
+            extra = f"\n💬 Izoh yuborildi: {html.escape(comment)}" if comment and sent else ""
+            await safe_send(bot, admin, f"✅ Bajarildi deb tasdiqlandi.{extra}{nxt_line}{warn}",
+                            reply_markup=panel_btn())
     else:
         await pool.execute("UPDATE shifts SET status='open', admin_comment=$2 WHERE day=$1", day, comment)
         await pool.execute("DELETE FROM shift_photos WHERE day=$1", day)
-        await safe_send(
+        sent = await safe_send(
             bot, row["user_id"],
             f"❌ {who(row)}, navbatchilik <b>bajarilmadi</b> deb topildi.{note}\n\n"
-            f"Iltimos, qaytadan bajarib, «✅ Bajardim» tugmasini bosing va yangi rasmlar yuboring.",
+            "Iltimos, qaytadan bajarib, «✅ Bajardim» tugmasini bosing va yangi rasmlar yuboring.",
             reply_markup=bajardim_kb(day),
         )
         if admin:
-            await safe_send(bot, admin, "❌ Bajarilmadi deb belgilandi. Navbatchi qayta bajaradi, unga xabar yuborildi.")
+            warn = "" if sent else warn_text
+            extra = f"\n💬 Izoh yuborildi: {html.escape(comment)}" if comment and sent else ""
+            await safe_send(bot, admin, f"❌ Bajarilmadi deb belgilandi.{extra}\nNavbatchi qayta bajaradi.{warn}",
+                            reply_markup=panel_btn())
 
 
 # ---------------------------------------------------------------- scheduler
-async def tick(bot: Bot, now: datetime, hm, day_times, is_day: bool, is_eve: bool, is_final: bool):
+async def tick(bot: Bot, now: datetime, hm, day_times, is_day: bool, pers_now: bool, grp_now: bool,
+               is_final: bool):
     if not await is_started():
         return  # navbatchilik boshlanmaguncha eslatma yo'q
     row = await get_or_create_shift(shift_day(now))
@@ -1186,14 +1390,17 @@ async def tick(bot: Bot, now: datetime, hm, day_times, is_day: bool, is_eve: boo
     if row["status"] not in ("open", "collecting"):
         return
 
-    if is_eve:
+    if pers_now:
+        # navbatchining profiliga (shaxsiy chat)
         await safe_send(bot, row["user_id"], random.choice(EVE_TEXTS).format(who=who(row)),
                         reply_markup=bajardim_kb(row["day"]))
-        if chat and hm in GROUP_SLOTS:
-            await safe_send(bot, chat, random.choice(EVE_TEXTS).format(who=who_group(row)),
-                            reply_markup=bajardim_kb(row["day"]))
-    elif is_day:
-        if chat and hm == day_times[0]:
+    if grp_now and chat:
+        # guruhga
+        await safe_send(bot, chat, random.choice(EVE_TEXTS).format(who=who_group(row)),
+                        reply_markup=bajardim_kb(row["day"]))
+
+    if is_day:
+        if chat and day_times and hm == day_times[0]:
             await safe_send(bot, chat, f"📅 Bugungi navbatchi: <b>{who_group(row)}</b>")
         await safe_send(bot, row["user_id"], random.choice(DAY_TEXTS).format(who=who(row)),
                         reply_markup=bajardim_kb(row["day"]))
@@ -1209,9 +1416,16 @@ async def scheduler(bot: Bot):
             if key != last:
                 last = key
                 day_times = await get_day_times()
-                is_day, is_eve, is_final = hm in day_times, hm in REM_SLOTS, hm == FINAL_SLOT
-                if is_day or is_eve or is_final:
-                    await tick(bot, now, hm, day_times, is_day, is_eve, is_final)
+                pers = await get_interval("eve_personal", DEFAULT_PERSONAL_MIN)
+                grp = await get_interval("eve_group", DEFAULT_GROUP_MIN)
+                off = eve_offset(hm)
+                in_eve = 0 <= off <= EVE_LENGTH_MIN
+                pers_now = in_eve and off % pers == 0
+                grp_now = in_eve and off % grp == 0
+                is_day = hm in day_times
+                is_final = hm == FINAL_SLOT
+                if is_day or pers_now or grp_now or is_final:
+                    await tick(bot, now, hm, day_times, is_day, pers_now, grp_now, is_final)
         except Exception:
             log.exception("scheduler xatosi")
         await asyncio.sleep(15)
